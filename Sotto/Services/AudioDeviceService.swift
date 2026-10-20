@@ -41,6 +41,7 @@ final class AudioDeviceService: @unchecked Sendable {
 
     private var listenerBlock: AudioObjectPropertyListenerBlock?
     private var previewEngine: AVAudioEngine?
+    private var previewDeviceInput: HALInputUnit?
     private var previewConfigChangeObserver: NSObjectProtocol?
     private let deviceChangeSubject = PassthroughSubject<Void, Never>()
     private var cancellables = Set<AnyCancellable>()
@@ -86,23 +87,32 @@ final class AudioDeviceService: @unchecked Sendable {
             engine.stop()
             previewEngine = nil
         }
+        previewDeviceInput?.stop()
+        previewDeviceInput = nil
         isPreviewActive = false
         previewAudioLevel = 0
     }
 
     private func buildPreviewEngine() throws {
-        let engine = AVAudioEngine()
-        let inputNode = engine.inputNode
         // Preview the chosen input, not the system default: opening a Bluetooth headset's
         // microphone switches it to its low-quality call profile and reconfigures audio
         // for every app, including a recording in progress.
         if let deviceID = selectedDeviceID {
             do {
-                try inputNode.auAudioUnit.setDeviceID(deviceID)
+                let input = try HALInputUnit(deviceID: deviceID) { [weak self] buffer in
+                    let level = Self.level(of: buffer)
+                    DispatchQueue.main.async { self?.previewAudioLevel = level }
+                }
+                try input.start()
+                previewDeviceInput = input
+                return
             } catch {
                 logger.warning("Preview could not use device \(deviceID), using default: \(error.localizedDescription)")
             }
         }
+
+        let engine = AVAudioEngine()
+        let inputNode = engine.inputNode
         let inputFormat = try Self.validInputFormat(
             inputNode.outputFormat(forBus: 0),
             failureMessage: "No audio input available for preview"
@@ -110,13 +120,7 @@ final class AudioDeviceService: @unchecked Sendable {
 
         inputNode.removeTap(onBus: 0)
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
-            guard let data = buffer.floatChannelData?[0] else { return }
-            let frames = Int(buffer.frameLength)
-            guard frames > 0 else { return }
-            var sum: Float = 0
-            for i in 0..<frames { sum += data[i] * data[i] }
-            let rms = sqrt(sum / Float(frames))
-            let level = AudioLevelMeter.normalizedLevel(rms: rms)
+            let level = Self.level(of: buffer)
             DispatchQueue.main.async { self?.previewAudioLevel = level }
         }
 
@@ -130,6 +134,14 @@ final class AudioDeviceService: @unchecked Sendable {
 
         previewEngine = engine
         installPreviewConfigObserver(for: engine)
+    }
+
+    private nonisolated static func level(of buffer: AVAudioPCMBuffer) -> Float {
+        guard let data = buffer.floatChannelData?[0], buffer.frameLength > 0 else { return 0 }
+        let frames = Int(buffer.frameLength)
+        var sum: Float = 0
+        for i in 0..<frames { sum += data[i] * data[i] }
+        return AudioLevelMeter.normalizedLevel(rms: sqrt(sum / Float(frames)))
     }
 
     private static func validInputFormat(

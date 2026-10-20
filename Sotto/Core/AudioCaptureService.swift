@@ -43,6 +43,8 @@ final class AudioCaptureService: @unchecked Sendable {
     var selectedDeviceID: AudioDeviceID?
 
     private var engine: AVAudioEngine?
+    /// Used instead of `engine` when a specific input is chosen; see `HALInputUnit`.
+    private var deviceInput: HALInputUnit?
     private var configChangeObserver: NSObjectProtocol?
     private var sampleBuffer: [Float] = []
     private let bufferLock = NSLock()
@@ -151,6 +153,8 @@ final class AudioCaptureService: @unchecked Sendable {
             engine.stop()
             self.engine = nil
         }
+        deviceInput?.stop()
+        deviceInput = nil
 
         processingQueue.sync {}
 
@@ -163,17 +167,17 @@ final class AudioCaptureService: @unchecked Sendable {
     // MARK: - Engine Setup
 
     private func buildAndStartEngine() throws {
-        let newEngine = AVAudioEngine()
-        let inputNode = newEngine.inputNode
-
         if let deviceID = selectedDeviceID {
             do {
-                try inputNode.auAudioUnit.setDeviceID(deviceID)
+                try startDeviceInput(deviceID)
+                return
             } catch {
-                logger.warning("Failed to bind input to device \(deviceID), falling back to default: \(error.localizedDescription)")
+                logger.warning("Failed to record from device \(deviceID), falling back to default: \(error.localizedDescription)")
             }
         }
 
+        let newEngine = AVAudioEngine()
+        let inputNode = newEngine.inputNode
         let inputFormat = try Self.validInputFormat(
             inputNode.outputFormat(forBus: 0),
             failureMessage: "No audio input available"
@@ -209,6 +213,32 @@ final class AudioCaptureService: @unchecked Sendable {
         installConfigChangeObserver(for: newEngine)
         isCapturing = true
         logger.info("Audio capture started")
+    }
+
+    /// Records the chosen input directly, so it stays on that device for the whole recording.
+    private func startDeviceInput(_ deviceID: AudioDeviceID) throws {
+        guard let targetFormat = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: Self.targetSampleRate,
+            channels: 1,
+            interleaved: false
+        ) else {
+            throw CaptureError.engineStartFailed("Cannot create target audio format")
+        }
+        var converter: AVAudioConverter?
+        let input = try HALInputUnit(deviceID: deviceID) { [weak self] buffer in
+            guard let converter else { return }
+            self?.processAudioBuffer(buffer, converter: converter, targetFormat: targetFormat)
+        }
+        guard let deviceConverter = AVAudioConverter(from: input.format, to: targetFormat) else {
+            throw CaptureError.engineStartFailed("Cannot create audio converter")
+        }
+        converter = deviceConverter
+        try input.start()
+
+        deviceInput = input
+        isCapturing = true
+        logger.info("Audio capture started on device \(deviceID)")
     }
 
     private static func validInputFormat(
@@ -385,7 +415,7 @@ final class AudioCaptureService: @unchecked Sendable {
 
 // MARK: - Utilities
 
-enum AudioLevelMeter {
+nonisolated enum AudioLevelMeter {
     private static let minimumDecibels: Float = -55
     private static let maximumDecibels: Float = -18
 
