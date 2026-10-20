@@ -14,11 +14,17 @@ final class RecorderTranscriberViewModel {
     var includeSystemAudio = UserDefaults.standard.bool(forKey: UserDefaultsKeys.recorderIncludeSystemAudio) {
         didSet { UserDefaults.standard.set(includeSystemAudio, forKey: UserDefaultsKeys.recorderIncludeSystemAudio) }
     }
-    /// Segments done and total while a call recording is transcribed.
+    /// Segments done and total while the rest of a call recording is transcribed.
     private(set) var segmentProgress: (done: Int, total: Int)?
+    /// While a call is recorded: what Sotto sees of it, and the transcript so far.
+    private(set) var liveContext: CallContext?
+    private(set) var liveTranscript = ""
 
     private var recordingTimer: Timer?
     private var recordingStartTime: Date?
+    private var liveTranscriber: LiveCallTranscriber?
+    private var liveTimer: Timer?
+    private static let livePollInterval: TimeInterval = 3
 
     // Reusable capture service for recording (separate from the dictation one
     // so we don't interfere with an active push-to-talk session).
@@ -48,6 +54,11 @@ final class RecorderTranscriberViewModel {
             }
             return
         }
+        // A call is transcribed while it is recorded, so the model must be ready up front.
+        if includeSystemAudio, !(modelManager?.isModelReady ?? false) {
+            phase = .error(String(localized: "No model loaded. Please download and select a model in Settings."))
+            return
+        }
         do {
             captureService.selectedDeviceID = resolveInputDevice()
             try captureService.startCapture()
@@ -60,6 +71,7 @@ final class RecorderTranscriberViewModel {
                     return
                 }
                 callObserver.start()
+                startLiveTranscription()
             }
             recordingStartTime = Date()
             phase = .recording
@@ -69,9 +81,42 @@ final class RecorderTranscriberViewModel {
         }
     }
 
+    private func startLiveTranscription() {
+        guard let mm = modelManager else { return }
+        let language = UserDefaults.standard.string(forKey: UserDefaultsKeys.selectedLanguage)
+        let transcriber = LiveCallTranscriber { samples in
+            try await mm.transcribe(samples: samples, language: language).text
+        }
+        transcriber.onChange = { [weak self] in self?.refreshLiveTranscript() }
+        liveTranscriber = transcriber
+        liveContext = nil
+        liveTranscript = ""
+        liveTimer = Timer.scheduledTimer(withTimeInterval: Self.livePollInterval, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.pollLiveTranscription() }
+        }
+    }
+
+    private func pollLiveTranscription() {
+        guard let liveTranscriber else { return }
+        liveTranscriber.poll(.microphone, fetch: captureService.getBufferDelta(since:))
+        liveTranscriber.poll(.system, fetch: systemCaptureService.getBufferDelta(since:))
+        if liveContext != callObserver.context { liveContext = callObserver.context }
+        refreshLiveTranscript()
+    }
+
+    private func refreshLiveTranscript() {
+        guard let liveTranscriber else { return }
+        liveTranscript = Self.transcriptText(liveTranscriber, context: liveContext)
+        if let total = segmentProgress?.total {
+            segmentProgress = (max(0, total - liveTranscriber.pendingCount), total)
+        }
+    }
+
     func stopRecording() {
         recordingTimer?.invalidate()
         recordingTimer = nil
+        liveTimer?.invalidate()
+        liveTimer = nil
         let samples = captureService.stopCapture()
         let systemSamples = systemCaptureService.isCapturing ? systemCaptureService.stopCapture() : nil
         let callContext = systemSamples == nil ? nil : callObserver.stop()
@@ -89,7 +134,7 @@ final class RecorderTranscriberViewModel {
                 timeRange: timeRange,
                 participantsLabel: String(localized: "Participants")
             )
-            transcribeCall(microphone: samples, system: systemSamples, context: callContext, header: header)
+            finishCall(microphone: samples, system: systemSamples, context: callContext, header: header)
         } else {
             transcribe(samples: samples)
         }
@@ -134,64 +179,63 @@ final class RecorderTranscriberViewModel {
         }
     }
 
-    /// Each source is split on silence and every segment transcribed on its own, so the
-    /// result can be interleaved as "Me" / "Others" without engine timestamps. A system
-    /// segment gets a name when the call app showed who was speaking then.
-    private func transcribeCall(microphone: [Float], system: [Float], context: CallContext?, header: String) {
-        guard let mm = modelManager, mm.isModelReady else {
-            phase = .error(String(localized: "No model loaded. Please download and select a model in Settings."))
+    /// Most of the call was transcribed while it was recorded; this transcribes what is
+    /// left and names the speakers again with everything the call app showed.
+    private func finishCall(microphone: [Float], system: [Float], context: CallContext?, header: String) {
+        guard let liveTranscriber else {
+            phase = .error(String(localized: "No speech detected."))
             return
         }
-        // A denied permission makes the tap deliver silence rather than fail.
-        let systemSilent = SpeechSegmenter.isSilent(system)
+        phase = .transcribing
+        liveContext = context
+        liveTranscriber.queueRemaining(microphone: microphone, system: system)
+        segmentProgress = (0, liveTranscriber.pendingCount)
+        Task {
+            await liveTranscriber.waitUntilDone()
+            segmentProgress = nil
+            self.liveTranscriber = nil
 
-        let microphoneSegments = SpeechSegmenter.segments(in: microphone)
-        let microphoneSpeech = microphoneSegments.map { Self.seconds($0.lowerBound)...Self.seconds($0.upperBound) }
-        let jobs: [(CallTranscript.Speaker, [Float], Range<Int>)] =
-            microphoneSegments.map { (.me, microphone, $0) }
-            + SpeechSegmenter.segments(in: system).map { range in
+            let text = Self.transcriptText(liveTranscriber, context: context)
+            if !text.isEmpty {
+                phase = .done(header + "\n\n" + text)
+            } else if let error = liveTranscriber.lastError {
+                phase = .error(error.localizedDescription)
+            } else {
+                // A denied permission makes the tap deliver silence rather than fail.
+                phase = .error(SpeechSegmenter.isSilent(system)
+                    ? String(localized: "No system audio was captured. Check that Sotto is allowed under Screen & System Audio Recording in System Settings.")
+                    : String(localized: "No speech detected."))
+            }
+        }
+    }
+
+    /// The microphone is "Me"; a system segment gets a name when the call app showed who
+    /// was speaking then.
+    private static func transcriptText(_ transcriber: LiveCallTranscriber, context: CallContext?) -> String {
+        let microphoneSpeech = transcriber.microphoneSpeech
+        let lines = transcriber.entries.map { entry -> CallTranscript.Line in
+            let start = seconds(entry.range.lowerBound)
+            let speaker: CallTranscript.Speaker
+            switch entry.source {
+            case .microphone:
+                speaker = .me
+            case .system:
                 let name = context.flatMap {
                     SpeakerAttribution.speaker(
-                        from: Self.seconds(range.lowerBound),
-                        to: Self.seconds(range.upperBound),
+                        from: start,
+                        to: seconds(entry.range.upperBound),
                         context: $0,
                         microphoneSpeech: microphoneSpeech
                     )
                 }
-                return (name.map(CallTranscript.Speaker.named) ?? .others, system, range)
+                speaker = name.map(CallTranscript.Speaker.named) ?? .others
             }
-        guard !jobs.isEmpty else {
-            phase = .error(systemSilent
-                ? String(localized: "No system audio was captured. Check that Sotto is allowed under Screen & System Audio Recording in System Settings.")
-                : String(localized: "No speech detected."))
-            return
+            return .init(speaker: speaker, start: start, text: entry.text)
         }
-
-        phase = .transcribing
-        segmentProgress = (0, jobs.count)
-        Task {
-            defer { segmentProgress = nil }
-            do {
-                let language = UserDefaults.standard.string(forKey: UserDefaultsKeys.selectedLanguage)
-                var lines: [CallTranscript.Line] = []
-                for (index, (speaker, samples, range)) in jobs.enumerated() {
-                    let result = try await mm.transcribe(samples: Array(samples[range]), language: language)
-                    lines.append(.init(
-                        speaker: speaker,
-                        start: Self.seconds(range.lowerBound),
-                        text: result.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                    ))
-                    segmentProgress = (index + 1, jobs.count)
-                }
-                let text = CallTranscript(lines: lines).formatted(
-                    meLabel: String(localized: "Me"),
-                    othersLabel: String(localized: "Others")
-                )
-                phase = text.isEmpty ? .error(String(localized: "No speech detected.")) : .done(header + "\n\n" + text)
-            } catch {
-                phase = .error(error.localizedDescription)
-            }
-        }
+        return CallTranscript(lines: lines).formatted(
+            meLabel: String(localized: "Me"),
+            othersLabel: String(localized: "Others")
+        )
     }
 
     private static func seconds(_ sampleIndex: Int) -> TimeInterval {
