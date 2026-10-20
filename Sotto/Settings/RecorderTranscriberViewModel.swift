@@ -33,8 +33,16 @@ final class RecorderTranscriberViewModel {
     // MARK: - Recording
 
     func startRecording() {
+        // This view model lives as long as the app, so the permission it cached at launch
+        // can be stale: check again, and ask, before giving up.
         guard captureService.hasMicrophonePermission else {
-            phase = .error(String(localized: "Microphone permission required."))
+            Task {
+                if await captureService.requestMicrophonePermission() {
+                    startRecording()
+                } else {
+                    phase = .error(String(localized: "Microphone permission required."))
+                }
+            }
             return
         }
         do {
