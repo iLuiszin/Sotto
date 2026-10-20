@@ -10,6 +10,11 @@ final class RecorderTranscriberViewModel {
     var phase: Phase = .idle
     var recordingDuration: TimeInterval = 0
     var audioLevel: Float = 0
+    var includeSystemAudio = UserDefaults.standard.bool(forKey: UserDefaultsKeys.recorderIncludeSystemAudio) {
+        didSet { UserDefaults.standard.set(includeSystemAudio, forKey: UserDefaultsKeys.recorderIncludeSystemAudio) }
+    }
+    /// Segments done and total while a call recording is transcribed.
+    private(set) var segmentProgress: (done: Int, total: Int)?
 
     private var recordingTimer: Timer?
     private var recordingStartTime: Date?
@@ -17,6 +22,7 @@ final class RecorderTranscriberViewModel {
     // Reusable capture service for recording (separate from the dictation one
     // so we don't interfere with an active push-to-talk session).
     private let captureService = AudioCaptureService()
+    private let systemCaptureService = SystemAudioCaptureService()
 
     var canTranscribe: Bool { modelManager?.isModelReady ?? false }
     var activeModelName: String? { modelManager?.activeModelName }
@@ -33,6 +39,15 @@ final class RecorderTranscriberViewModel {
         do {
             captureService.selectedDeviceID = nil
             try captureService.startCapture()
+            if includeSystemAudio {
+                do {
+                    try systemCaptureService.startCapture()
+                } catch {
+                    _ = captureService.stopCapture()
+                    phase = .error(String(localized: "Could not capture system audio: \(error.localizedDescription)"))
+                    return
+                }
+            }
             recordingStartTime = Date()
             phase = .recording
             startTimer()
@@ -45,14 +60,19 @@ final class RecorderTranscriberViewModel {
         recordingTimer?.invalidate()
         recordingTimer = nil
         let samples = captureService.stopCapture()
-        recordingDuration = Double(samples.count) / 16_000
+        let systemSamples = systemCaptureService.isCapturing ? systemCaptureService.stopCapture() : nil
+        recordingDuration = Double(max(samples.count, systemSamples?.count ?? 0)) / 16_000
         audioLevel = 0
 
-        guard !samples.isEmpty, recordingDuration >= 0.3 else {
+        guard recordingDuration >= 0.3 else {
             phase = .error(String(localized: "Recording too short."))
             return
         }
-        transcribe(samples: samples)
+        if let systemSamples {
+            transcribeCall(microphone: samples, system: systemSamples)
+        } else {
+            transcribe(samples: samples)
+        }
     }
 
     // MARK: - File Import
@@ -94,6 +114,53 @@ final class RecorderTranscriberViewModel {
         }
     }
 
+    /// Each source is split on silence and every segment transcribed on its own, so the
+    /// result can be interleaved as "Me" / "Others" without engine timestamps.
+    private func transcribeCall(microphone: [Float], system: [Float]) {
+        guard let mm = modelManager, mm.isModelReady else {
+            phase = .error(String(localized: "No model loaded. Please download and select a model in Settings."))
+            return
+        }
+        // A denied permission makes the tap deliver silence rather than fail.
+        let systemSilent = SpeechSegmenter.isSilent(system)
+
+        let jobs: [(CallTranscript.Speaker, [Float], Range<Int>)] =
+            SpeechSegmenter.segments(in: microphone).map { (.me, microphone, $0) }
+            + SpeechSegmenter.segments(in: system).map { (.others, system, $0) }
+        guard !jobs.isEmpty else {
+            phase = .error(systemSilent
+                ? String(localized: "No system audio was captured. Check that Sotto is allowed under Screen & System Audio Recording in System Settings.")
+                : String(localized: "No speech detected."))
+            return
+        }
+
+        phase = .transcribing
+        segmentProgress = (0, jobs.count)
+        Task {
+            defer { segmentProgress = nil }
+            do {
+                let language = UserDefaults.standard.string(forKey: UserDefaultsKeys.selectedLanguage)
+                var lines: [CallTranscript.Line] = []
+                for (index, (speaker, samples, range)) in jobs.enumerated() {
+                    let result = try await mm.transcribe(samples: Array(samples[range]), language: language)
+                    lines.append(.init(
+                        speaker: speaker,
+                        start: Double(range.lowerBound) / 16_000,
+                        text: result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    ))
+                    segmentProgress = (index + 1, jobs.count)
+                }
+                let text = CallTranscript(lines: lines).formatted(
+                    meLabel: String(localized: "Me"),
+                    othersLabel: String(localized: "Others")
+                )
+                phase = text.isEmpty ? .error(String(localized: "No speech detected.")) : .done(text)
+            } catch {
+                phase = .error(error.localizedDescription)
+            }
+        }
+    }
+
     // MARK: - Utilities
 
     func copyText() {
@@ -110,6 +177,18 @@ final class RecorderTranscriberViewModel {
     var hasResult: Bool { if case .done = phase { return true } else { return false } }
 
     var resultText: String { if case .done(let t) = phase { return t } else { return "" } }
+
+    var isRecording: Bool { phase == .recording }
+
+    /// For the global recorder shortcut: starts a recording, or stops the current one
+    /// and transcribes it. Ignored while a previous recording is still transcribing.
+    func toggleRecording() {
+        switch phase {
+        case .recording: stopRecording()
+        case .loading, .transcribing: break
+        case .idle, .done, .error: startRecording()
+        }
+    }
 
     var isBusy: Bool {
         switch phase {

@@ -14,6 +14,8 @@ enum UserDefaultsKeys {
 
     static let continuityEnabled = "continuityEnabled"
 
+    static let recorderIncludeSystemAudio = "recorderIncludeSystemAudio"
+
     static let selectedSettingsTab = "selectedSettingsTab"
 
     // Hotkeys

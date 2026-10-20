@@ -3,6 +3,7 @@ import SwiftUI
 struct HotkeySettingsView: View {
     @Environment(DictationCoordinator.self) private var coordinator
     @State private var hybridLabel = ""
+    @State private var recorderLabel = ""
 
     var body: some View {
         Form {
@@ -21,12 +22,29 @@ struct HotkeySettingsView: View {
                     }
                 )
             }
+
+            Section("Recording") {
+                HotkeyRecorderView(
+                    label: recorderLabel,
+                    title: String(localized: "Start or stop recording"),
+                    subtitle: String(localized: "Records in the Transcribe tab, even with the window closed"),
+                    onRecord: { hotkey in
+                        coordinator.hotkeyService.updateHotkey(hotkey, for: .recorderToggle)
+                        recorderLabel = HotkeyService.displayName(for: hotkey)
+                    },
+                    onClear: {
+                        coordinator.hotkeyService.clearHotkey(for: .recorderToggle)
+                        recorderLabel = ""
+                    }
+                )
+            }
         }
         .formStyle(.grouped)
         .padding()
         .onAppear {
             HotkeyRecorderView.hotkeyService = coordinator.hotkeyService
             hybridLabel = loadLabel(for: .hybrid)
+            recorderLabel = loadLabel(for: .recorderToggle)
         }
     }
 

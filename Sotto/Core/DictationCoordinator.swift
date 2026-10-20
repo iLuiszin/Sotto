@@ -60,6 +60,8 @@ final class DictationCoordinator {
     let modelManager: ModelManager
     let aiService: AIService
     let audioDeviceService: AudioDeviceService
+    /// The Transcribe tab's recorder. Lives here so its shortcut works with the window closed.
+    let recorder: RecorderTranscriberViewModel
 
     // MARK: - Private
 
@@ -81,6 +83,7 @@ final class DictationCoordinator {
         self.modelManager = ModelManager()
         self.audioDeviceService = AudioDeviceService()
         self.aiService = AIService()
+        self.recorder = RecorderTranscriberViewModel()
 
         self.soundFeedbackEnabled = UserDefaults.standard.object(forKey: UserDefaultsKeys.soundFeedbackEnabled) as? Bool ?? true
         self.waveformPreset = UserDefaults.standard.string(forKey: UserDefaultsKeys.waveformColorPreset)
@@ -99,6 +102,7 @@ final class DictationCoordinator {
     private var notchIndicator: NotchIndicatorController?
 
     func start() {
+        recorder.modelManager = modelManager
         setupBindings()
         hotkeyService.setup()
 
@@ -128,7 +132,25 @@ final class DictationCoordinator {
             self?.cancelDictation()
         }
 
+        hotkeyService.onRecorderToggle = { [weak self] in
+            self?.toggleRecorder()
+        }
+
         hotkeyService.discardPushToTalkRecordingOnExtraKeyPress = true
+    }
+
+    /// The start sound plays before capture begins, so it doesn't end up in the recording.
+    func toggleRecorder() {
+        Task {
+            let wasRecording = recorder.isRecording
+            if !wasRecording, soundFeedbackEnabled {
+                await playActivationSound()
+            }
+            recorder.toggleRecording()
+            if wasRecording, soundFeedbackEnabled {
+                await playActivationSound()
+            }
+        }
     }
 
     var canDictate: Bool {

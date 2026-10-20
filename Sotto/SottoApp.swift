@@ -97,6 +97,12 @@ private struct MenuBarContentView: View {
             openSettings()
         }
 
+        if coordinator.recorder.isRecording {
+            Button("Stop Recording") {
+                coordinator.toggleRecorder()
+            }
+        }
+
         Divider()
 
         Button("Check for Updates...") {

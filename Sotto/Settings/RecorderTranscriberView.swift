@@ -3,8 +3,11 @@ import UniformTypeIdentifiers
 
 struct RecorderTranscriberView: View {
     @Environment(DictationCoordinator.self) private var coordinator
-    @State private var viewModel = RecorderTranscriberViewModel()
     @State private var showFilePicker = false
+
+    /// Owned by the coordinator, so a recording started with the shortcut keeps running
+    /// while this window is closed and its result is here when the window opens.
+    private var viewModel: RecorderTranscriberViewModel { coordinator.recorder }
 
     var body: some View {
         ScrollView {
@@ -18,9 +21,6 @@ struct RecorderTranscriberView: View {
             .padding(24)
         }
         .frame(minWidth: 500, minHeight: 400)
-        .task {
-            viewModel.modelManager = coordinator.modelManager
-        }
         .fileImporter(
             isPresented: $showFilePicker,
             allowedContentTypes: [.audio, .mp3, .wav, .mpeg4Audio, .aiff, .audiovisualContent],
@@ -117,6 +117,16 @@ struct RecorderTranscriberView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+
+            VStack(alignment: .leading, spacing: 4) {
+                @Bindable var viewModel = viewModel
+                Toggle("Include system audio", isOn: $viewModel.includeSystemAudio)
+                    .disabled(viewModel.isBusy)
+                Text("Also records what other apps play, like the other side of a call. Use headphones so your microphone doesn't pick it up twice.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -164,8 +174,13 @@ struct RecorderTranscriberView: View {
         case .transcribing:
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
-                Text("Transcribing...")
-                    .foregroundStyle(.secondary)
+                if let progress = viewModel.segmentProgress {
+                    Text("Transcribing \(progress.done) of \(progress.total)...")
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Transcribing...")
+                        .foregroundStyle(.secondary)
+                }
             }
             .accessibilityElement(children: .combine)
             .frame(maxWidth: .infinity, alignment: .leading)
