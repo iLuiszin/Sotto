@@ -63,6 +63,22 @@ struct SpeakerAttributionTests {
         #expect(SpeakerAttribution.speaker(from: 0, to: 5, context: context, microphoneSpeech: []) == "Daniel")
     }
 
+    @Test func cutsWhereAnotherPersonStartsSpeaking() {
+        let context = meet(sightings: [("Allan", 2), ("Allan", 3), ("Allan", 8), ("Leo", 12), ("Leo", 13), ("Leo", 18)])
+        // Leo's captions start at 12 s; they trail speech by about a second.
+        #expect(SpeakerAttribution.speakerChanges(from: 0, to: 20, context: context, microphoneSpeech: []) == [11])
+    }
+
+    @Test func ignoresASingleStrayCaption() {
+        let context = meet(sightings: [("Allan", 2), ("Allan", 3), ("Leo", 6), ("Allan", 7), ("Allan", 8)])
+        #expect(SpeakerAttribution.speakerChanges(from: 0, to: 10, context: context, microphoneSpeech: []).isEmpty)
+    }
+
+    @Test func neverCutsForTheUser() {
+        let context = meet(sightings: [("Allan", 2), ("Allan", 3), ("Luis", 6), ("Luis", 7), ("Allan", 12), ("Allan", 13)], selfName: "Luis")
+        #expect(SpeakerAttribution.speakerChanges(from: 0, to: 15, context: context, microphoneSpeech: []).isEmpty)
+    }
+
     @Test func staysGenericWhenUnknown() {
         let context = meet(sightings: [], participants: ["Luis", "Daniel", "Julio"], selfName: "Luis")
         #expect(SpeakerAttribution.speaker(from: 0, to: 5, context: context, microphoneSpeech: []) == nil)

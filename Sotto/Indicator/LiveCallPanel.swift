@@ -59,11 +59,51 @@ private struct LiveCallPanelView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
+            summary
             LiveCallView(viewModel: viewModel, transcriptHeight: nil)
+            if let file = viewModel.savedFile {
+                Button {
+                    NSWorkspace.shared.activateFileViewerSelecting([file])
+                } label: {
+                    Label("Show in Finder", systemImage: "folder")
+                }
+                .buttonStyle(.link)
+                .font(.caption)
+            }
         }
         .padding(14)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+    }
+
+    @ViewBuilder
+    private var summary: some View {
+        switch viewModel.summaryState {
+        case .none:
+            EmptyView()
+        case .working:
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text("Summarizing...").font(.caption).foregroundStyle(.secondary)
+            }
+        case .done(let text):
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Summary").font(.subheadline.weight(.semibold))
+                ScrollView {
+                    Text(text)
+                        .font(.callout)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: 180)
+            }
+            Divider()
+        case .failed(let message):
+            Text("Could not summarize: \(message)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
     }
 
     private var header: some View {

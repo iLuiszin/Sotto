@@ -1,7 +1,10 @@
 import SwiftUI
 @preconcurrency import AVFoundation
 import CoreAudio
+import os
 import UniformTypeIdentifiers
+
+private let logger = Logger(subsystem: AppConstants.loggerSubsystem, category: "Recorder")
 
 @Observable
 @MainActor
@@ -20,12 +23,21 @@ final class RecorderTranscriberViewModel {
     private(set) var liveContext: CallContext?
     private(set) var liveTranscript = ""
 
+    enum SummaryState: Equatable { case none, working, done(String), failed(String) }
+    /// The AI summary of the last call, written after its transcript.
+    private(set) var summaryState: SummaryState = .none
+    /// Where the last call's transcript was saved.
+    private(set) var savedFile: URL?
+    var aiService: AIService?
+
     private var recordingTimer: Timer?
     private var recordingStartTime: Date?
     private var liveTranscriber: LiveCallTranscriber?
     private var liveTimer: Timer?
     private let livePanel = LiveCallPanelController()
     private static let livePollInterval: TimeInterval = 3
+    /// A long call takes several model passes; past this the summary is given up.
+    private static let summaryTimeout: TimeInterval = 180
 
     // Reusable capture service for recording (separate from the dictation one
     // so we don't interfere with an active push-to-talk session).
@@ -89,6 +101,15 @@ final class RecorderTranscriberViewModel {
             try await mm.transcribe(samples: samples, language: language).text
         }
         transcriber.onChange = { [weak self] in self?.refreshLiveTranscript() }
+        transcriber.systemSpeakerChanges = { [weak self, weak transcriber] start, end in
+            guard let context = self?.callObserver.context, let transcriber else { return [] }
+            return SpeakerAttribution.speakerChanges(
+                from: start,
+                to: end,
+                context: context,
+                microphoneSpeech: transcriber.microphoneSpeech
+            )
+        }
         liveTranscriber = transcriber
         liveContext = nil
         liveTranscript = ""
@@ -136,7 +157,8 @@ final class RecorderTranscriberViewModel {
                 timeRange: timeRange,
                 participantsLabel: String(localized: "Participants")
             )
-            finishCall(microphone: samples, system: systemSamples, context: callContext, header: header)
+            let file = CallTranscriptFile.url(startedAt: recordingStartTime ?? Date(), context: callContext)
+            finishCall(microphone: samples, system: systemSamples, context: callContext, header: header, file: file)
         } else {
             transcribe(samples: samples)
         }
@@ -183,13 +205,15 @@ final class RecorderTranscriberViewModel {
 
     /// Most of the call was transcribed while it was recorded; this transcribes what is
     /// left and names the speakers again with everything the call app showed.
-    private func finishCall(microphone: [Float], system: [Float], context: CallContext?, header: String) {
+    private func finishCall(microphone: [Float], system: [Float], context: CallContext?, header: String, file: URL) {
         guard let liveTranscriber else {
             phase = .error(String(localized: "No speech detected."))
             return
         }
         phase = .transcribing
         liveContext = context
+        summaryState = .none
+        savedFile = nil
         liveTranscriber.queueRemaining(microphone: microphone, system: system)
         segmentProgress = (0, liveTranscriber.pendingCount)
         Task {
@@ -200,6 +224,8 @@ final class RecorderTranscriberViewModel {
             let text = Self.transcriptText(liveTranscriber, context: context)
             if !text.isEmpty {
                 phase = .done(header + "\n\n" + text)
+                save(header: header, summary: nil, transcript: text, to: file)
+                await summarize(header: header, transcript: text, file: file)
             } else if let error = liveTranscriber.lastError {
                 phase = .error(error.localizedDescription)
             } else {
@@ -208,6 +234,45 @@ final class RecorderTranscriberViewModel {
                     ? String(localized: "No system audio was captured. Check that Sotto is allowed under Screen & System Audio Recording in System Settings.")
                     : String(localized: "No speech detected."))
             }
+        }
+    }
+
+    private static var fileLabels: CallTranscriptFile.Labels {
+        .init(
+            summary: String(localized: "Summary"),
+            keyPoints: String(localized: "Key points"),
+            decisions: String(localized: "Decisions"),
+            nextSteps: String(localized: "Next steps"),
+            transcript: String(localized: "Transcript")
+        )
+    }
+
+    /// The transcript is saved first, so it is kept even if the summary fails.
+    private func save(header: String, summary: String?, transcript: String, to file: URL) {
+        let markdown = CallTranscriptFile.markdown(header: header, summary: summary, transcript: transcript, labels: Self.fileLabels)
+        do {
+            try CallTranscriptFile.write(markdown, to: file)
+            savedFile = file
+        } catch {
+            logger.error("Could not save the call transcript: \(error.localizedDescription)")
+        }
+    }
+
+    /// Summarizes on device with Apple Intelligence when it is available, then saves the
+    /// file again with the summary above the transcript.
+    private func summarize(header: String, transcript: String, file: URL) async {
+        guard let aiService, aiService.isAvailable else { return }
+        summaryState = .working
+        do {
+            let summary = try await withAITimeout(seconds: Self.summaryTimeout) { [aiService] in
+                try await aiService.summarizeCall(transcript)
+            }
+            let text = CallTranscriptFile.formatted(summary, labels: Self.fileLabels)
+            summaryState = .done(text)
+            save(header: header, summary: text, transcript: transcript, to: file)
+        } catch {
+            logger.error("Call summary failed: \(error.localizedDescription)")
+            summaryState = .failed(error.localizedDescription)
         }
     }
 

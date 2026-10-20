@@ -38,6 +38,8 @@ final class LiveCallTranscriber {
     private(set) var pendingCount = 0
     private(set) var lastError: Error?
     var onChange: (() -> Void)?
+    /// Recording seconds within a system segment where another person starts speaking.
+    var systemSpeakerChanges: (_ start: TimeInterval, _ end: TimeInterval) -> [TimeInterval] = { _, _ in [] }
 
     init(transcribe: @escaping ([Float]) async throws -> String) {
         self.transcribe = transcribe
@@ -91,7 +93,11 @@ final class LiveCallTranscriber {
                 logger.debug("Dropped a microphone segment quieter than the user's voice")
                 continue
             }
-            queue.append((source, Array(tail[range]), (base + range.lowerBound)..<(base + range.upperBound)))
+            let absolute = (base + range.lowerBound)..<(base + range.upperBound)
+            for piece in source == .system ? splitAtSpeakerChanges(absolute) : [absolute] {
+                let local = (piece.lowerBound - base)..<(piece.upperBound - base)
+                queue.append((source, Array(tail[local]), piece))
+            }
         }
         // Resume at the first unfinished segment; with none, keep only the holdback, so
         // silence never piles up in the tail that is copied on every poll.
@@ -100,6 +106,23 @@ final class LiveCallTranscriber {
         committed[source] = base + max(0, next)
         pendingCount = queue.count
         startWorker()
+    }
+
+    /// Cuts a system segment where the call app shows a different person speaking, so
+    /// two people answering each other without a pause get a line each.
+    private func splitAtSpeakerChanges(_ range: Range<Int>) -> [Range<Int>] {
+        let rate = Double(Self.sampleRate)
+        let cuts = systemSpeakerChanges(Double(range.lowerBound) / rate, Double(range.upperBound) / rate)
+            .map { Int($0 * rate) }
+            .filter { range.lowerBound < $0 && $0 < range.upperBound }
+        var pieces: [Range<Int>] = []
+        var start = range.lowerBound
+        for cut in cuts.sorted() {
+            pieces.append(start..<cut)
+            start = cut
+        }
+        pieces.append(start..<range.upperBound)
+        return pieces
     }
 
     private func startWorker() {

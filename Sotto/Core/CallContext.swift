@@ -73,6 +73,39 @@ nonisolated enum SpeakerAttribution {
         return nil
     }
 
+    /// Where someone else starts speaking within `start...end`, in recording seconds, so a
+    /// system segment holding two people back to back can be cut between them.
+    /// A new speaker counts once captions name them twice in a row, which ignores a single
+    /// stray reading; the cut is moved back by `sightingLead`, since captions trail speech.
+    static func speakerChanges(
+        from start: TimeInterval,
+        to end: TimeInterval,
+        context: CallContext,
+        microphoneSpeech: [ClosedRange<TimeInterval>],
+        minimumPiece: TimeInterval = 1
+    ) -> [TimeInterval] {
+        let me = context.selfName ?? inferredSelf(context: context, microphoneSpeech: microphoneSpeech)
+        let sightings = context.speakerSightings
+            .filter { $0.name != me && $0.at >= start && $0.at <= end + sightingLead }
+            .sorted { $0.at < $1.at }
+
+        var changes: [TimeInterval] = []
+        var current: String?
+        var lastCut = start
+        for (index, sighting) in sightings.enumerated() where sighting.name != current {
+            let confirmed = index + 1 < sightings.count && sightings[index + 1].name == sighting.name
+            guard confirmed else { continue }
+            defer { current = sighting.name }
+            guard current != nil else { continue }
+            let cut = sighting.at - sightingLead
+            if cut - lastCut >= minimumPiece, end - cut >= minimumPiece {
+                changes.append(cut)
+                lastCut = cut
+            }
+        }
+        return changes
+    }
+
     /// The caption name seen mostly while the microphone had speech: that is the user.
     static func inferredSelf(context: CallContext, microphoneSpeech: [ClosedRange<TimeInterval>]) -> String? {
         let byName = Dictionary(grouping: context.speakerSightings, by: \.name)
