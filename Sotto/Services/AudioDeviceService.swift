@@ -93,6 +93,16 @@ final class AudioDeviceService: @unchecked Sendable {
     private func buildPreviewEngine() throws {
         let engine = AVAudioEngine()
         let inputNode = engine.inputNode
+        // Preview the chosen input, not the system default: opening a Bluetooth headset's
+        // microphone switches it to its low-quality call profile and reconfigures audio
+        // for every app, including a recording in progress.
+        if let deviceID = selectedDeviceID {
+            do {
+                try inputNode.auAudioUnit.setDeviceID(deviceID)
+            } catch {
+                logger.warning("Preview could not use device \(deviceID), using default: \(error.localizedDescription)")
+            }
+        }
         let inputFormat = try Self.validInputFormat(
             inputNode.outputFormat(forBus: 0),
             failureMessage: "No audio input available for preview"
