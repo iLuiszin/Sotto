@@ -24,6 +24,7 @@ final class RecorderTranscriberViewModel {
     private var recordingStartTime: Date?
     private var liveTranscriber: LiveCallTranscriber?
     private var liveTimer: Timer?
+    private let livePanel = LiveCallPanelController()
     private static let livePollInterval: TimeInterval = 3
 
     // Reusable capture service for recording (separate from the dictation one
@@ -94,6 +95,7 @@ final class RecorderTranscriberViewModel {
         liveTimer = Timer.scheduledTimer(withTimeInterval: Self.livePollInterval, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in self?.pollLiveTranscription() }
         }
+        livePanel.show(self)
     }
 
     private func pollLiveTranscription() {

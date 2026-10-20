@@ -136,41 +136,10 @@ struct RecorderTranscriberView: View {
 
     /// What Sotto sees of the call and the transcript so far, while it records.
     private var liveCallPanel: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if let context = viewModel.liveContext {
-                Text("\(context.app) · \(context.title)")
-                    .font(.subheadline.weight(.semibold))
-                if !context.participants.isEmpty {
-                    Text("Participants (\(context.participants.count)): \(context.participants.map(\.name).joined(separator: ", "))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            } else {
-                Text("No call detected yet")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            ScrollViewReader { proxy in
-                ScrollView {
-                    Text(viewModel.liveTranscript.isEmpty
-                         ? String(localized: "Listening…")
-                         : viewModel.liveTranscript)
-                        .font(.callout)
-                        .foregroundStyle(viewModel.liveTranscript.isEmpty ? .secondary : .primary)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .id("end")
-                }
-                .frame(height: 180)
-                .onChange(of: viewModel.liveTranscript) {
-                    proxy.scrollTo("end", anchor: .bottom)
-                }
-            }
-        }
-        .padding(10)
-        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
-        .frame(maxWidth: .infinity, alignment: .leading)
+        LiveCallView(viewModel: viewModel, transcriptHeight: 180)
+            .padding(10)
+            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - File Import
