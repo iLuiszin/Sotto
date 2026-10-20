@@ -6,6 +6,8 @@
 	<string>public.app-category.productivity</string>
 	<key>NSAudioCaptureUsageDescription</key>
 	<string>Sotto records system audio only when you turn on Include system audio, so it can transcribe the other side of a call.</string>
+	<key>SUEnableAutomaticChecks</key>
+	<false/>
 	<key>SUFeedURL</key>
 	<string>https://raw.githubusercontent.com/evertjr/Sotto/main/appcast.xml</string>
 	<key>SUPublicEDKey</key>

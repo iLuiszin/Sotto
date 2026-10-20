@@ -50,7 +50,47 @@ struct SpeechSegmenterTests {
     }
 }
 
+struct SlackHuddleLabelsTests {
+    @Test func parsesHuddleWindowTitle() {
+        let place = SlackHuddleLabels.parseWindowTitle("meus-bots - IBRACEM - Slack")
+        #expect(place?.channel == "meus-bots")
+        #expect(place?.workspace == "IBRACEM")
+    }
+
+    @Test func rejectsMainWindowTitle() {
+        #expect(SlackHuddleLabels.parseWindowTitle("meus-bots (Canal) - IBRACEM - 14 novos itens - Slack [Principal] 🏠") == nil)
+        #expect(SlackHuddleLabels.parseWindowTitle("Preferências") == nil)
+    }
+
+    @Test func readsParticipantNameFromTileRow() {
+        #expect(SlackHuddleLabels.participantName(fromRowTitle: "Ver perfil de Luís Felipe Matos Corrêa") == "Luís Felipe Matos Corrêa")
+        #expect(SlackHuddleLabels.participantName(fromRowTitle: "View profile of Daniel Botelho") == "Daniel Botelho")
+        #expect(SlackHuddleLabels.participantName(fromRowTitle: "Daniel Botelho: CMA@IBRA100.") == nil)
+        #expect(SlackHuddleLabels.participantName(fromRowTitle: "Ver perfil de ") == nil)
+    }
+
+    @Test func readsMicStateFromTileLabel() {
+        #expect(SlackHuddleLabels.isMicOn(fromTileLabel: "vídeo está desativado, áudio está ativado") == true)
+        #expect(SlackHuddleLabels.isMicOn(fromTileLabel: "vídeo está desativado, áudio está desativado") == false)
+        #expect(SlackHuddleLabels.isMicOn(fromTileLabel: "Mais ações") == nil)
+    }
+}
+
 struct CallTranscriptTests {
+    @Test func headerListsHuddlePlaceAndParticipants() {
+        let huddle = HuddleContext(workspace: "IBRACEM", channel: "meus-bots", participants: [
+            .init(name: "Luís Felipe", micOnAt: [0]),
+            .init(name: "Daniel Botelho", micOnAt: []),
+        ])
+        #expect(CallTranscript.header(huddle: huddle, timeRange: "20/10/2026 14:02–14:31", participantsLabel: "Participantes")
+            == "Slack · IBRACEM · meus-bots · 20/10/2026 14:02–14:31\nParticipantes: Luís Felipe, Daniel Botelho")
+    }
+
+    @Test func headerWithoutHuddleIsJustTheTime() {
+        #expect(CallTranscript.header(huddle: nil, timeRange: "20/10/2026 14:02–14:31", participantsLabel: "Participantes")
+            == "20/10/2026 14:02–14:31")
+    }
+
     @Test func interleavesByStartTime() {
         let transcript = CallTranscript(lines: [
             .init(speaker: .others, start: 5, text: "Fine, thanks."),

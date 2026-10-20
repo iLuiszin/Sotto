@@ -132,6 +132,16 @@ nonisolated struct CallTranscript: Equatable {
         .joined(separator: "\n\n")
     }
 
+    /// "Slack · IBRACEM · meus-bots · 20/10/2026 14:02–14:31" and, when known, the participants.
+    static func header(huddle: HuddleContext?, timeRange: String, participantsLabel: String) -> String {
+        guard let huddle else { return timeRange }
+        var lines = ["Slack · \(huddle.workspace) · \(huddle.channel) · \(timeRange)"]
+        if !huddle.participants.isEmpty {
+            lines.append("\(participantsLabel): \(huddle.participants.map(\.name).joined(separator: ", "))")
+        }
+        return lines.joined(separator: "\n")
+    }
+
     private static func timestamp(_ seconds: TimeInterval) -> String {
         let total = Int(seconds)
         let hours = total / 3600

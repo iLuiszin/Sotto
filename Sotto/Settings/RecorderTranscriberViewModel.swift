@@ -23,6 +23,7 @@ final class RecorderTranscriberViewModel {
     // so we don't interfere with an active push-to-talk session).
     private let captureService = AudioCaptureService()
     private let systemCaptureService = SystemAudioCaptureService()
+    private let huddleObserver = SlackHuddleObserver()
 
     var canTranscribe: Bool { modelManager?.isModelReady ?? false }
     var activeModelName: String? { modelManager?.activeModelName }
@@ -47,6 +48,7 @@ final class RecorderTranscriberViewModel {
                     phase = .error(String(localized: "Could not capture system audio: \(error.localizedDescription)"))
                     return
                 }
+                huddleObserver.start()
             }
             recordingStartTime = Date()
             phase = .recording
@@ -61,6 +63,8 @@ final class RecorderTranscriberViewModel {
         recordingTimer = nil
         let samples = captureService.stopCapture()
         let systemSamples = systemCaptureService.isCapturing ? systemCaptureService.stopCapture() : nil
+        let huddle = systemSamples == nil ? nil : huddleObserver.stop()
+        let timeRange = recordingStartTime.map { Self.timeRange(from: $0, to: Date()) } ?? ""
         recordingDuration = Double(max(samples.count, systemSamples?.count ?? 0)) / 16_000
         audioLevel = 0
 
@@ -69,7 +73,12 @@ final class RecorderTranscriberViewModel {
             return
         }
         if let systemSamples {
-            transcribeCall(microphone: samples, system: systemSamples)
+            let header = CallTranscript.header(
+                huddle: huddle,
+                timeRange: timeRange,
+                participantsLabel: String(localized: "Participants")
+            )
+            transcribeCall(microphone: samples, system: systemSamples, header: header)
         } else {
             transcribe(samples: samples)
         }
@@ -116,7 +125,7 @@ final class RecorderTranscriberViewModel {
 
     /// Each source is split on silence and every segment transcribed on its own, so the
     /// result can be interleaved as "Me" / "Others" without engine timestamps.
-    private func transcribeCall(microphone: [Float], system: [Float]) {
+    private func transcribeCall(microphone: [Float], system: [Float], header: String) {
         guard let mm = modelManager, mm.isModelReady else {
             phase = .error(String(localized: "No model loaded. Please download and select a model in Settings."))
             return
@@ -154,11 +163,19 @@ final class RecorderTranscriberViewModel {
                     meLabel: String(localized: "Me"),
                     othersLabel: String(localized: "Others")
                 )
-                phase = text.isEmpty ? .error(String(localized: "No speech detected.")) : .done(text)
+                phase = text.isEmpty ? .error(String(localized: "No speech detected.")) : .done(header + "\n\n" + text)
             } catch {
                 phase = .error(error.localizedDescription)
             }
         }
+    }
+
+    /// "20/10/2026 14:02–14:31" in the user's locale.
+    private static func timeRange(from start: Date, to end: Date) -> String {
+        let date = start.formatted(date: .numeric, time: .omitted)
+        let startTime = start.formatted(date: .omitted, time: .shortened)
+        let endTime = end.formatted(date: .omitted, time: .shortened)
+        return "\(date) \(startTime)–\(endTime)"
     }
 
     // MARK: - Utilities

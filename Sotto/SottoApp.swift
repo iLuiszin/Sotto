@@ -7,7 +7,8 @@ struct SottoApp: App {
     @Environment(\.openWindow) private var openWindow
     @State private var coordinator = DictationCoordinator()
     @State private var didLaunch = false
-    private let updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+    // Personal fork: upstream's appcast would replace this build with the original app.
+    private let updaterController = SPUStandardUpdaterController(startingUpdater: false, updaterDelegate: nil, userDriverDelegate: nil)
 
     private var needsOnboarding: Bool {
         !UserDefaults.standard.bool(forKey: "onboardingCompleted")
@@ -104,10 +105,6 @@ private struct MenuBarContentView: View {
         }
 
         Divider()
-
-        Button("Check for Updates...") {
-            updater.checkForUpdates()
-        }
 
         Button("Settings...") {
             openSettings()
