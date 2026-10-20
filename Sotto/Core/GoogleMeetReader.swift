@@ -13,6 +13,8 @@ nonisolated enum GoogleMeetLabels {
     static let turnOnCaptions: Set = ["Ativar legendas", "Turn on captions"]
     static let turnOffCaptions: Set = ["Desativar legendas", "Turn off captions"]
     static let selfMarkers: Set = ["(Eu)", "(Você)", "(You)"]
+    /// What captions show instead of the user's own name.
+    static let selfCaptionNames: Set = ["Você", "Eu", "You"]
 
     /// The page title of a call → its name: "Meet - Daily - Time AGI" → "Daily - Time AGI".
     /// A meeting without a name is titled with its code instead: "Meet: dqw-mgvh-abi".

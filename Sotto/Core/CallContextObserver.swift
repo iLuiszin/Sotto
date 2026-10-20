@@ -111,7 +111,12 @@ final class CallContextObserver {
     private func record(_ caption: (speaker: String, text: String), at time: TimeInterval) {
         defer { lastCaption = caption }
         guard caption.speaker != lastCaption?.speaker || caption.text != lastCaption?.text else { return }
-        context?.observe(speaker: caption.speaker, at: time)
+        // Meet captions the user as "Você"/"You": count it as them, not as another person.
+        let speaker = GoogleMeetLabels.selfCaptionNames.contains(caption.speaker)
+            ? context?.selfName
+            : caption.speaker
+        guard let speaker else { return }
+        context?.observe(speaker: speaker, at: time)
     }
 
     private static func remindToTurnOnCaptions() {
