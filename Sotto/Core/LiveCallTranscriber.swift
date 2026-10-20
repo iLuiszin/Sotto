@@ -28,6 +28,9 @@ final class LiveCallTranscriber {
 
     private let transcribe: ([Float]) async throws -> String
     private var committed: [Source: Int] = [.microphone: 0, .system: 0]
+    private var microphoneGate = MicrophoneGate()
+    /// Microphone samples already measured by the gate, so each is measured once.
+    private var microphoneMeasured = 0
     private var queue: [(source: Source, samples: [Float], range: Range<Int>)] = []
     private var worker: Task<Void, Never>?
 
@@ -68,9 +71,26 @@ final class LiveCallTranscriber {
     }
 
     private func take(_ source: Source, tail: [Float], base: Int, final: Bool) {
-        let segments = SpeechSegmenter.segments(in: tail)
+        var configuration = SpeechSegmenter.Configuration()
+        if source == .microphone {
+            let unmeasured = max(0, microphoneMeasured - base)
+            if unmeasured < tail.count {
+                // Whole frames only, so the remainder is measured with the next samples.
+                let frames = (tail.count - unmeasured) / MicrophoneGate.frameLength
+                let end = unmeasured + frames * MicrophoneGate.frameLength
+                microphoneGate.learn(tail[unmeasured..<end])
+                microphoneMeasured = base + end
+            }
+            configuration.speechThreshold = microphoneGate.speechThreshold
+        }
+
+        let segments = SpeechSegmenter.segments(in: tail, configuration: configuration)
         let finished = final ? segments : segments.filter { $0.upperBound <= tail.count - Self.holdback }
         for range in finished {
+            if source == .microphone, !microphoneGate.accepts(tail[range]) {
+                logger.debug("Dropped a microphone segment quieter than the user's voice")
+                continue
+            }
             queue.append((source, Array(tail[range]), (base + range.lowerBound)..<(base + range.upperBound)))
         }
         // Resume at the first unfinished segment; with none, keep only the holdback, so

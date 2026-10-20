@@ -14,6 +14,8 @@ private let logger = Logger(subsystem: AppConstants.loggerSubsystem, category: "
 final class CallContextObserver {
     private static let tickInterval: TimeInterval = 1
     private static let fullReadEvery = 10
+    /// Unchanged caption reads, in ticks, before the captions region is looked up again.
+    private static let staleCaptionReads = 2
     static let meetApp = "Google Meet"
     static let slackApp = "Slack"
 
@@ -23,6 +25,7 @@ final class CallContextObserver {
     private var preparedMeet = false
     private var captionsRegion: AXUIElement?
     private var lastCaption: (speaker: String, text: String)?
+    private var unchangedCaptionReads = 0
     private(set) var context: CallContext?
 
     func start() {
@@ -39,6 +42,7 @@ final class CallContextObserver {
         preparedMeet = false
         captionsRegion = nil
         lastCaption = nil
+        unchangedCaptionReads = 0
         fullRead()
         timer = Timer.scheduledTimer(withTimeInterval: Self.tickInterval, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in self?.tick() }
@@ -103,6 +107,17 @@ final class CallContextObserver {
             if AccessibilityTree.role(of: region) == nil { captionsRegion = nil }
             return
         }
+        // Meet can replace the captions region while the old element stays readable but
+        // frozen, so a caption that stops changing is checked against a fresh lookup.
+        if caption.speaker == lastCaption?.speaker, caption.text == lastCaption?.text {
+            unchangedCaptionReads += 1
+            if unchangedCaptionReads >= Self.staleCaptionReads {
+                unchangedCaptionReads = 0
+                captionsRegion = nil
+            }
+        } else {
+            unchangedCaptionReads = 0
+        }
         record(caption, at: elapsed)
     }
 
@@ -116,6 +131,7 @@ final class CallContextObserver {
             ? context?.selfName
             : caption.speaker
         guard let speaker else { return }
+        logger.debug("Caption speaker \(speaker, privacy: .private) at \(time)")
         context?.observe(speaker: speaker, at: time)
     }
 
