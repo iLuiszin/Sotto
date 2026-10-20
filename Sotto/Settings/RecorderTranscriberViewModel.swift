@@ -1,5 +1,6 @@
 import SwiftUI
 @preconcurrency import AVFoundation
+import CoreAudio
 import UniformTypeIdentifiers
 
 @Observable
@@ -29,6 +30,8 @@ final class RecorderTranscriberViewModel {
     var activeModelName: String? { modelManager?.activeModelName }
 
     weak var modelManager: ModelManager?
+    /// The input chosen in Settings, shared with dictation. `nil` means the system default.
+    var resolveInputDevice: () -> AudioDeviceID? = { nil }
 
     // MARK: - Recording
 
@@ -46,7 +49,7 @@ final class RecorderTranscriberViewModel {
             return
         }
         do {
-            captureService.selectedDeviceID = nil
+            captureService.selectedDeviceID = resolveInputDevice()
             try captureService.startCapture()
             if includeSystemAudio {
                 do {

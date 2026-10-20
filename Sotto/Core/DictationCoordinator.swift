@@ -103,6 +103,7 @@ final class DictationCoordinator {
 
     func start() {
         recorder.modelManager = modelManager
+        recorder.resolveInputDevice = { [weak self] in self?.resolvedInputDeviceID() }
         setupBindings()
         hotkeyService.setup()
 

@@ -135,13 +135,16 @@ enum GoogleMeetReader {
     // MARK: - Tree
 
     /// The web area of a Meet tab. Only the active tab of a window is exposed, so a Meet
-    /// call in a background tab is not seen.
+    /// call in a background tab is not seen. Matches on the page's own title: Chrome
+    /// prefixes the window title with notices such as "Uso elevado da memória em Meet - …".
     private static func meetPage(in app: AXUIElement) -> AXUIElement? {
         for window in AccessibilityTree.windows(of: app) {
-            guard AccessibilityTree.title(of: window)?.hasPrefix("Meet") == true else { continue }
-            if let page = AccessibilityTree.first(in: window, where: { AccessibilityTree.role(of: $0) == "AXWebArea" }) {
-                return page
+            guard AccessibilityTree.title(of: window)?.contains("Meet - ") == true else { continue }
+            let page = AccessibilityTree.first(in: window) { element in
+                AccessibilityTree.role(of: element) == "AXWebArea"
+                    && AccessibilityTree.title(of: element).flatMap(GoogleMeetLabels.meetingTitle(fromPageTitle:)) != nil
             }
+            if let page { return page }
         }
         return nil
     }

@@ -76,6 +76,15 @@ nonisolated final class SystemAudioCaptureService: @unchecked Sendable {
         }
     }
 
+    /// Samples recorded after `sampleOffset`, for transcribing while the recording runs.
+    /// Same contract as `AudioCaptureService.getBufferDelta(since:)`.
+    func getBufferDelta(since sampleOffset: Int) -> (samples: [Float], nextOffset: Int) {
+        bufferLock.withLock {
+            let clamped = max(0, min(sampleOffset, sampleBuffer.count))
+            return (Array(sampleBuffer.dropFirst(clamped)), sampleBuffer.count)
+        }
+    }
+
     // MARK: - Setup
 
     private func createTap() throws {
