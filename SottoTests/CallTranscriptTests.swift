@@ -77,18 +77,25 @@ struct SlackHuddleLabelsTests {
 }
 
 struct CallTranscriptTests {
-    @Test func headerListsHuddlePlaceAndParticipants() {
-        let huddle = HuddleContext(workspace: "IBRACEM", channel: "meus-bots", participants: [
-            .init(name: "Luís Felipe", micOnAt: [0]),
-            .init(name: "Daniel Botelho", micOnAt: []),
-        ])
-        #expect(CallTranscript.header(huddle: huddle, timeRange: "20/10/2026 14:02–14:31", participantsLabel: "Participantes")
-            == "Slack · IBRACEM · meus-bots · 20/10/2026 14:02–14:31\nParticipantes: Luís Felipe, Daniel Botelho")
+    @Test func headerListsCallPlaceAndParticipants() {
+        var context = CallContext(app: "Slack", title: "IBRACEM · meus-bots")
+        context.observe(participants: [("Luís Felipe", true), ("Daniel Botelho", false)], at: 0)
+        #expect(CallTranscript.header(context: context, timeRange: "20/10/2026 14:02–14:31", participantsLabel: "Participantes")
+            == "Slack · IBRACEM · meus-bots · 20/10/2026 14:02–14:31\nParticipantes (2): Luís Felipe, Daniel Botelho")
     }
 
-    @Test func headerWithoutHuddleIsJustTheTime() {
-        #expect(CallTranscript.header(huddle: nil, timeRange: "20/10/2026 14:02–14:31", participantsLabel: "Participantes")
+    @Test func headerWithoutCallIsJustTheTime() {
+        #expect(CallTranscript.header(context: nil, timeRange: "20/10/2026 14:02–14:31", participantsLabel: "Participantes")
             == "20/10/2026 14:02–14:31")
+    }
+
+    @Test func namedSpeakersUseTheirNames() {
+        let transcript = CallTranscript(lines: [
+            .init(speaker: .named("Sarah Bezerra"), start: 2, text: "Bom dia."),
+            .init(speaker: .me, start: 5, text: "Bom dia!"),
+        ])
+        #expect(transcript.formatted(meLabel: "Eu", othersLabel: "Outros")
+            == "[00:02] Sarah Bezerra: Bom dia.\n\n[00:05] Eu: Bom dia!")
     }
 
     @Test func interleavesByStartTime() {

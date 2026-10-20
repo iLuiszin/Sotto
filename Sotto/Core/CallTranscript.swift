@@ -89,10 +89,12 @@ nonisolated enum SpeechSegmenter {
     }
 }
 
-/// A transcript of a call: the microphone is "me", system audio is "others".
+/// A transcript of a call: the microphone is "me", system audio is "others", or the
+/// person the call app named as speaking.
 nonisolated struct CallTranscript: Equatable {
     enum Speaker: Equatable {
         case me, others
+        case named(String)
     }
 
     struct Line: Equatable {
@@ -126,18 +128,24 @@ nonisolated struct CallTranscript: Equatable {
             }
         }
         return turns.map { line in
-            let label = line.speaker == .me ? meLabel : othersLabel
+            let label = switch line.speaker {
+            case .me: meLabel
+            case .others: othersLabel
+            case .named(let name): name
+            }
             return "[\(Self.timestamp(line.start))] \(label): \(line.text)"
         }
         .joined(separator: "\n\n")
     }
 
-    /// "Slack · IBRACEM · meus-bots · 20/10/2026 14:02–14:31" and, when known, the participants.
-    static func header(huddle: HuddleContext?, timeRange: String, participantsLabel: String) -> String {
-        guard let huddle else { return timeRange }
-        var lines = ["Slack · \(huddle.workspace) · \(huddle.channel) · \(timeRange)"]
-        if !huddle.participants.isEmpty {
-            lines.append("\(participantsLabel): \(huddle.participants.map(\.name).joined(separator: ", "))")
+    /// "Google Meet · Daily (jkv-pzvy-gjr) · 20/10/2026 09:22–09:45" and, when known, the
+    /// participants.
+    static func header(context: CallContext?, timeRange: String, participantsLabel: String) -> String {
+        guard let context else { return timeRange }
+        var lines = ["\(context.app) · \(context.title) · \(timeRange)"]
+        if !context.participants.isEmpty {
+            let names = context.participants.map(\.name)
+            lines.append("\(participantsLabel) (\(names.count)): \(names.joined(separator: ", "))")
         }
         return lines.joined(separator: "\n")
     }

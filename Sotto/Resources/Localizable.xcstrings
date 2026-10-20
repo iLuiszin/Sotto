@@ -2754,6 +2754,46 @@
         }
       }
     },
+    "Sotto uses Meet's captions to tell who is speaking. Turn them on with the CC button." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto erkennt anhand der Meet-Untertitel, wer spricht. Aktiviere sie mit der CC-Taste."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto usa los subtítulos de Meet para saber quién habla. Actívalos con el botón CC."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto utilise les sous-titres de Meet pour savoir qui parle. Activez-les avec le bouton CC."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto は Meet の字幕で話者を判別します。CC ボタンで字幕をオンにしてください。"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Sotto usa as legendas do Meet para saber quem está falando. Ative-as no botão CC."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto 通过 Meet 字幕识别谁在说话。请点按 CC 按钮开启字幕。"
+          }
+        }
+      }
+    },
     "Sound feedback" : {
       "localizations" : {
         "de" : {
@@ -3441,6 +3481,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重试"
+          }
+        }
+      }
+    },
+    "Turn on Meet captions" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Meet-Untertitel aktivieren"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activa los subtítulos de Meet"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activez les sous-titres de Meet"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Meet の字幕をオンにしてください"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ative as legendas do Meet"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开启 Meet 字幕"
           }
         }
       }
