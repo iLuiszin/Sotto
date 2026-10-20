@@ -28,6 +28,11 @@ final class DictationCoordinator {
     var soundFeedbackEnabled: Bool {
         didSet { UserDefaults.standard.set(soundFeedbackEnabled, forKey: UserDefaultsKeys.soundFeedbackEnabled) }
     }
+    /// ISO 639-1 code passed to every engine, or `nil` to let the model detect it.
+    /// Engines read it from UserDefaults when transcribing.
+    var transcriptionLanguage: String? {
+        didSet { UserDefaults.standard.set(transcriptionLanguage, forKey: UserDefaultsKeys.selectedLanguage) }
+    }
     var waveformPreset: WaveformColorPreset {
         didSet { UserDefaults.standard.set(waveformPreset.rawValue, forKey: UserDefaultsKeys.waveformColorPreset) }
     }
@@ -86,6 +91,7 @@ final class DictationCoordinator {
         self.recorder = RecorderTranscriberViewModel()
 
         self.soundFeedbackEnabled = UserDefaults.standard.object(forKey: UserDefaultsKeys.soundFeedbackEnabled) as? Bool ?? true
+        self.transcriptionLanguage = UserDefaults.standard.string(forKey: UserDefaultsKeys.selectedLanguage)
         self.waveformPreset = UserDefaults.standard.string(forKey: UserDefaultsKeys.waveformColorPreset)
             .flatMap { WaveformColorPreset(rawValue: $0) } ?? .aurora
         let hasNotch = NSScreen.main?.safeAreaInsets.top ?? 0 > 0

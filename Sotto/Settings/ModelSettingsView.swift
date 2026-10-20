@@ -8,6 +8,8 @@ struct ModelSettingsView: View {
 
         ScrollView {
             VStack(spacing: 20) {
+                SpokenLanguageSection()
+
                 ForEach(SottoModel.Engine.allCases, id: \.rawValue) { engine in
                     let models = ModelManager.availableModels.filter { $0.engine == engine }
                     EngineSection(
@@ -29,6 +31,33 @@ struct ModelSettingsView: View {
                 .padding(.horizontal)
             }
         }
+    }
+}
+
+/// Fixing the language stops a model from mistaking an accent for another language.
+private struct SpokenLanguageSection: View {
+    @Environment(DictationCoordinator.self) private var coordinator
+
+    /// ISO 639-1 codes every engine accepts; names come from the system locale.
+    private static let languageCodes = ["pt", "en", "es", "fr", "de", "it", "nl", "pl", "ru", "ja", "ko", "zh"]
+
+    var body: some View {
+        @Bindable var coordinator = coordinator
+
+        VStack(alignment: .leading, spacing: 4) {
+            Picker("Spoken language", selection: $coordinator.transcriptionLanguage) {
+                Text("Detect automatically").tag(String?.none)
+                Divider()
+                ForEach(Self.languageCodes, id: \.self) { code in
+                    Text(Locale.current.localizedString(forLanguageCode: code)?.localizedCapitalized ?? code)
+                        .tag(String?.some(code))
+                }
+            }
+            Text("Choose the language you speak if the model sometimes writes in the wrong one.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

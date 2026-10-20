@@ -442,6 +442,16 @@
         }
       }
     },
+    "Choose the language you speak if the model sometimes writes in the wrong one." : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Wähle deine Sprache, falls das Modell manchmal in einer falschen Sprache schreibt." } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Elige el idioma que hablas si el modelo a veces escribe en otro." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Choisissez la langue que vous parlez si le modèle écrit parfois dans une autre." } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "モデルが別の言語で書き起こすことがある場合は、話す言語を選んでください。" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Escolha o idioma que você fala se o modelo às vezes escreve em outro." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "如果模型有时用错误的语言转写，请选择你说的语言。" } }
+      }
+    },
     "Choose a Model" : {
       "localizations" : {
         "de" : {
@@ -733,6 +743,16 @@
             "value" : "删除文件"
           }
         }
+      }
+    },
+    "Detect automatically" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Automatisch erkennen" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Detectar automáticamente" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Détecter automatiquement" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "自動検出" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Detectar automaticamente" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "自动检测" } }
       }
     },
     "Dictation" : {
@@ -2903,6 +2923,16 @@
             "value" : "速度"
           }
         }
+      }
+    },
+    "Spoken language" : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Gesprochene Sprache" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Idioma hablado" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Langue parlée" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "話す言語" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Idioma falado" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "口语语言" } }
       }
     },
     "Start or stop recording" : {
