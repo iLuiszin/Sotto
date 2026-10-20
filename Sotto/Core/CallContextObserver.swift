@@ -27,6 +27,12 @@ final class CallContextObserver {
 
     func start() {
         stop()
+        // Reading call apps needs Accessibility. Asking through the system prompt also
+        // registers Sotto in that list, which adding it by hand does not always do.
+        let options = ["AXTrustedCheckOptionPrompt" as CFString: true] as CFDictionary
+        if !AXIsProcessTrustedWithOptions(options) {
+            logger.warning("Accessibility not granted; call context unavailable")
+        }
         context = nil
         startDate = Date()
         tickCount = 0
