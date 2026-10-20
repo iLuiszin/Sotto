@@ -5,6 +5,8 @@ import Testing
 struct GoogleMeetLabelsTests {
     @Test func readsMeetingTitleAndCode() {
         #expect(GoogleMeetLabels.meetingTitle(fromPageTitle: "Meet - Daily - Time AGI") == "Daily - Time AGI")
+        #expect(GoogleMeetLabels.meetingTitle(fromPageTitle: "Meet: dqw-mgvh-abi") == "dqw-mgvh-abi")
+        #expect(GoogleMeetLabels.meetingTitle(fromPageTitle: "Google Meet") == nil)
         #expect(GoogleMeetLabels.meetingTitle(fromPageTitle: "Google Agenda") == nil)
         #expect(GoogleMeetLabels.meetingCode(fromAddress: "https://meet.google.com/jkv-pzvy-gjr?authuser=0") == "jkv-pzvy-gjr")
         #expect(GoogleMeetLabels.meetingCode(fromAddress: "https://calendar.google.com/abc-defg-hij") == nil)

@@ -14,10 +14,11 @@ nonisolated enum GoogleMeetLabels {
     static let turnOffCaptions: Set = ["Desativar legendas", "Turn off captions"]
     static let selfMarkers: Set = ["(Eu)", "(Você)", "(You)"]
 
-    /// "Meet - Daily - Time AGI" (the page title) → "Daily - Time AGI".
+    /// The page title of a call → its name: "Meet - Daily - Time AGI" → "Daily - Time AGI".
+    /// A meeting without a name is titled with its code instead: "Meet: dqw-mgvh-abi".
     static func meetingTitle(fromPageTitle title: String) -> String? {
-        guard title.hasPrefix("Meet - ") else { return nil }
-        let name = title.dropFirst("Meet - ".count).trimmingCharacters(in: .whitespaces)
+        guard let prefix = ["Meet - ", "Meet: "].first(where: title.hasPrefix) else { return nil }
+        let name = title.dropFirst(prefix.count).trimmingCharacters(in: .whitespaces)
         return name.isEmpty ? nil : name
     }
 
@@ -88,7 +89,7 @@ enum GoogleMeetReader {
         let captions = region.map(readCaptions(in:)) ?? []
 
         return Snapshot(
-            title: code.map { "\(name) (\($0))" } ?? name,
+            title: code.map { $0 == name ? name : "\(name) (\($0))" } ?? name,
             selfName: people.selfName,
             participants: people.list,
             currentCaption: captions.last,
@@ -139,7 +140,9 @@ enum GoogleMeetReader {
     /// prefixes the window title with notices such as "Uso elevado da memória em Meet - …".
     private static func meetPage(in app: AXUIElement) -> AXUIElement? {
         for window in AccessibilityTree.windows(of: app) {
-            guard AccessibilityTree.title(of: window)?.contains("Meet - ") == true else { continue }
+            guard let windowTitle = AccessibilityTree.title(of: window),
+                  windowTitle.contains("Meet - ") || windowTitle.contains("Meet: ")
+            else { continue }
             let page = AccessibilityTree.first(in: window) { element in
                 AccessibilityTree.role(of: element) == "AXWebArea"
                     && AccessibilityTree.title(of: element).flatMap(GoogleMeetLabels.meetingTitle(fromPageTitle:)) != nil
