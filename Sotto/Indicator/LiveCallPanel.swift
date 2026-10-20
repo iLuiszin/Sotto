@@ -30,7 +30,10 @@ final class LiveCallPanelController {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         panel.isMovableByWindowBackground = true
         panel.minSize = NSSize(width: 280, height: 220)
-        panel.contentView = NSHostingView(rootView: view)
+        let hostingView = NSHostingView(rootView: view)
+        // The panel sets the size; without this the view widens to fit unwrapped text.
+        hostingView.sizingOptions = []
+        panel.contentView = hostingView
 
         if let screen = NSScreen.main {
             let frame = screen.visibleFrame
@@ -133,6 +136,7 @@ struct LiveCallView: View {
                         .font(.callout)
                         .foregroundStyle(viewModel.liveTranscript.isEmpty ? .secondary : .primary)
                         .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .id("end")
                 }
