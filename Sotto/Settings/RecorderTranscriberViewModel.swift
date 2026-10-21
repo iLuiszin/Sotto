@@ -101,6 +101,9 @@ final class RecorderTranscriberViewModel {
             try await mm.transcribe(samples: samples, language: language).text
         }
         transcriber.onChange = { [weak self] in self?.refreshLiveTranscript() }
+        transcriber.systemAudio = { [weak self] since in
+            self?.systemCaptureService.getBufferDelta(since: since).samples ?? []
+        }
         transcriber.systemSpeakerChanges = { [weak self, weak transcriber] start, end in
             guard let context = self?.callObserver.context, let transcriber else { return [] }
             return SpeakerAttribution.speakerChanges(

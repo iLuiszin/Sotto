@@ -40,6 +40,8 @@ final class LiveCallTranscriber {
     var onChange: (() -> Void)?
     /// Recording seconds within a system segment where another person starts speaking.
     var systemSpeakerChanges: (_ start: TimeInterval, _ end: TimeInterval) -> [TimeInterval] = { _, _ in [] }
+    /// System audio recorded from a sample offset on, the reference for echo on the microphone.
+    var systemAudio: (_ since: Int) -> [Float] = { _ in [] }
 
     init(transcribe: @escaping ([Float]) async throws -> String) {
         self.transcribe = transcribe
@@ -54,6 +56,7 @@ final class LiveCallTranscriber {
 
     /// Queues everything left in the complete recordings.
     func queueRemaining(microphone: [Float], system: [Float]) {
+        systemAudio = { since in Array(system[min(since, system.count)...]) }
         for (source, samples) in [(Source.microphone, microphone), (.system, system)] {
             let start = min(committed[source] ?? 0, samples.count)
             take(source, tail: Array(samples[start...]), base: start, final: true)
@@ -94,6 +97,10 @@ final class LiveCallTranscriber {
                 continue
             }
             let absolute = (base + range.lowerBound)..<(base + range.upperBound)
+            if source == .microphone, isEcho(tail[range], at: absolute) {
+                logger.debug("Dropped a microphone segment that echoes the system audio")
+                continue
+            }
             for piece in source == .system ? splitAtSpeakerChanges(absolute) : [absolute] {
                 let local = (piece.lowerBound - base)..<(piece.upperBound - base)
                 queue.append((source, Array(tail[local]), piece))
@@ -106,6 +113,12 @@ final class LiveCallTranscriber {
         committed[source] = base + max(0, next)
         pendingCount = queue.count
         startWorker()
+    }
+
+    private func isEcho(_ microphone: ArraySlice<Float>, at range: Range<Int>) -> Bool {
+        let leading = min(range.lowerBound, Int(EchoDetector.maximumLag * Double(Self.sampleRate)))
+        let system = systemAudio(range.lowerBound - leading).prefix(leading + range.count)
+        return EchoDetector.isEcho(microphone: microphone, system: system, leading: leading)
     }
 
     /// Cuts a system segment where the call app shows a different person speaking, so
