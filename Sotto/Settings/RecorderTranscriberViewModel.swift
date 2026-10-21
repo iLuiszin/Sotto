@@ -97,8 +97,8 @@ final class RecorderTranscriberViewModel {
     private func startLiveTranscription() {
         guard let mm = modelManager else { return }
         let language = UserDefaults.standard.string(forKey: UserDefaultsKeys.selectedLanguage)
-        let transcriber = LiveCallTranscriber { samples in
-            try await mm.transcribe(samples: samples, language: language).text
+        let transcriber = LiveCallTranscriber { samples, context in
+            try await mm.transcribe(samples: samples, language: language, context: context).text
         }
         transcriber.onChange = { [weak self] in self?.refreshLiveTranscript() }
         transcriber.systemAudio = { [weak self] since in

@@ -68,9 +68,13 @@ final class WhisperKitEngine: TranscriptionEngine {
     }
 
     func transcribe(samples: [Float], language: String?) async throws -> SottoTranscription {
+        try await transcribe(samples: samples, language: language, context: nil)
+    }
+
+    func transcribe(samples: [Float], language: String?, context: String?) async throws -> SottoTranscription {
         guard let whisperKit else { throw TranscriptionError.engineNotConfigured }
 
-        let promptTokens = makePromptTokens(tokenizer: whisperKit.tokenizer)
+        let promptTokens = makePromptTokens(tokenizer: whisperKit.tokenizer, context: context)
 
         let options = DecodingOptions(
             verbose: false,
@@ -108,22 +112,36 @@ final class WhisperKitEngine: TranscriptionEngine {
     private static let noSpeechProb: Float = 0.5
     private static let confidentLogProb: Float = -0.5
 
-    private func makePromptTokens(tokenizer: WhisperTokenizer?) -> [Int]? {
-        guard let tokenizer,
-              let raw = UserDefaults.standard.string(forKey: UserDefaultsKeys.vocabularyKeywords)
-        else { return nil }
+    /// Whisper reads at most 224 prompt tokens; earlier speech beyond this adds little.
+    private static let maximumContextCharacters = 300
 
-        let keywords = raw
+    /// The vocabulary keywords, then the end of what was said just before: with the topic
+    /// and names in view, Whisper guesses short or unclear phrases far better.
+    private func makePromptTokens(tokenizer: WhisperTokenizer?, context: String?) -> [Int]? {
+        guard let tokenizer else { return nil }
+
+        let keywords = (UserDefaults.standard.string(forKey: UserDefaultsKeys.vocabularyKeywords) ?? "")
             .split(separator: ",")
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
+        let recent = context.map { Self.recentWords(of: $0) } ?? ""
+        let prompt = [keywords.joined(separator: ", "), recent].filter { !$0.isEmpty }.joined(separator: ". ")
 
-        guard !keywords.isEmpty else { return nil }
+        guard !prompt.isEmpty else { return nil }
 
         let specialBegin = tokenizer.specialTokens.specialTokenBegin
-        let tokens = tokenizer.encode(text: keywords.joined(separator: ", "))
+        let tokens = tokenizer.encode(text: prompt)
             .filter { $0 < specialBegin }
         return tokens.isEmpty ? nil : tokens
+    }
+
+    /// The last words of `text`, cut at a word boundary so the prompt never starts mid-word.
+    nonisolated static func recentWords(of text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count > maximumContextCharacters else { return trimmed }
+        let tail = trimmed.suffix(maximumContextCharacters)
+        guard let space = tail.firstIndex(of: " ") else { return String(tail) }
+        return String(tail[tail.index(after: space)...])
     }
 
     private func modelPath(for model: SottoModel) -> URL {

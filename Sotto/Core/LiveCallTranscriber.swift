@@ -25,8 +25,14 @@ final class LiveCallTranscriber {
     private static let sampleRate = 16_000
     /// A segment counts as finished once this much audio follows it.
     private static let holdback = sampleRate
+    /// Silence that ends a segment. Dictation cuts at 0.6 s, but in a call that splits one
+    /// answer into one- or two-second clips, which the engines transcribe poorly; pauses
+    /// for breath inside an answer are shorter than this.
+    static let callPause: TimeInterval = 1.5
+    /// How many earlier lines are handed to the engine as context.
+    private static let contextLines = 4
 
-    private let transcribe: ([Float]) async throws -> String
+    private let transcribe: (_ samples: [Float], _ context: String) async throws -> String
     private var committed: [Source: Int] = [.microphone: 0, .system: 0]
     private var microphoneGate = MicrophoneGate()
     /// Microphone samples already measured by the gate, so each is measured once.
@@ -43,7 +49,8 @@ final class LiveCallTranscriber {
     /// System audio recorded from a sample offset on, the reference for echo on the microphone.
     var systemAudio: (_ since: Int) -> [Float] = { _ in [] }
 
-    init(transcribe: @escaping ([Float]) async throws -> String) {
+    /// `transcribe` gets each segment with the last few lines said before it, from anyone.
+    init(transcribe: @escaping (_ samples: [Float], _ context: String) async throws -> String) {
         self.transcribe = transcribe
     }
 
@@ -77,6 +84,7 @@ final class LiveCallTranscriber {
 
     private func take(_ source: Source, tail: [Float], base: Int, final: Bool) {
         var configuration = SpeechSegmenter.Configuration()
+        configuration.minSilence = Self.callPause
         if source == .microphone {
             let unmeasured = max(0, microphoneMeasured - base)
             if unmeasured < tail.count {
@@ -143,8 +151,9 @@ final class LiveCallTranscriber {
         worker = Task { [weak self] in
             while let self, !self.queue.isEmpty {
                 let job = self.queue.removeFirst()
+                let context = self.entries.suffix(Self.contextLines).map(\.text).joined(separator: " ")
                 do {
-                    let text = try await self.transcribe(job.samples).trimmingCharacters(in: .whitespacesAndNewlines)
+                    let text = try await self.transcribe(job.samples, context).trimmingCharacters(in: .whitespacesAndNewlines)
                     if !text.isEmpty {
                         self.entries.append(Entry(source: job.source, range: job.range, text: text))
                     }

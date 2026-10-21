@@ -39,6 +39,15 @@ protocol TranscriptionEngine {
     func deleteModel(_ model: SottoModel)
     func isModelDownloaded(_ model: SottoModel) -> Bool
     func transcribe(samples: [Float], language: String?) async throws -> SottoTranscription
+    /// `context` is what was said just before, which an engine may use to guess better.
+    func transcribe(samples: [Float], language: String?, context: String?) async throws -> SottoTranscription
+}
+
+extension TranscriptionEngine {
+    /// Engines that cannot take earlier text ignore it.
+    func transcribe(samples: [Float], language: String?, context: String?) async throws -> SottoTranscription {
+        try await transcribe(samples: samples, language: language)
+    }
 }
 
 @Observable
@@ -275,11 +284,11 @@ final class ModelManager {
         loadModel(model)
     }
 
-    func transcribe(samples: [Float], language: String?) async throws -> SottoTranscription {
+    func transcribe(samples: [Float], language: String?, context: String? = nil) async throws -> SottoTranscription {
         guard let engine = activeEngine else {
             throw TranscriptionError.engineNotConfigured
         }
-        return try await engine.transcribe(samples: samples, language: language)
+        return try await engine.transcribe(samples: samples, language: language, context: context)
     }
 }
 
