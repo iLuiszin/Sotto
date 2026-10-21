@@ -87,12 +87,26 @@ final class WhisperKitEngine: TranscriptionEngine {
         )
 
         let results = try await whisperKit.transcribe(audioArray: samples, decodeOptions: options)
-        let text = results.map { $0.text }.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        // Whisper pads short clips to 30 s and then tends to invent a polite stock phrase
+        // ("Permita-me, por favor.") instead of the words spoken. Those segments come out
+        // with low confidence, so keep only the ones the model was reasonably sure of.
+        let segments = results.flatMap(\.segments).filter {
+            $0.avgLogprob >= Self.minimumLogProb && !($0.noSpeechProb > Self.noSpeechProb && $0.avgLogprob < Self.confidentLogProb)
+        }
+        let text = segments.map(\.text).joined(separator: " ")
+            .replacingOccurrences(of: "  ", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         let detectedLanguage = results.first?.language
         let duration = results.flatMap { $0.segments }.last.map { TimeInterval($0.end) } ?? 0
 
         return SottoTranscription(text: text, detectedLanguage: detectedLanguage, duration: duration)
     }
+
+    /// Below this average log probability a segment is mostly guessed.
+    private static let minimumLogProb: Float = -1.0
+    /// A segment Whisper thinks is probably silence, kept only when it is confident.
+    private static let noSpeechProb: Float = 0.5
+    private static let confidentLogProb: Float = -0.5
 
     private func makePromptTokens(tokenizer: WhisperTokenizer?) -> [Int]? {
         guard let tokenizer,

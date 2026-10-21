@@ -13,13 +13,13 @@ nonisolated enum SlackHuddleLabels {
 
     private static let profilePrefixes = ["Ver perfil de ", "View profile of ", "View profile for "]
 
-    /// A participant tile row: "Ver perfil de Luís Felipe Matos Corrêa" → "Luís Felipe Matos Corrêa".
-    static func participantName(fromRowTitle title: String) -> String? {
-        for prefix in profilePrefixes where title.hasPrefix(prefix) {
-            let name = title.dropFirst(prefix.count).trimmingCharacters(in: .whitespaces)
-            return name.isEmpty ? nil : name
-        }
-        return nil
+    /// A participant tile row: "Ver perfil de Luís Felipe Matos Corrêa" → ["Luís Felipe Matos Corrêa"].
+    /// In a two-person huddle both tiles share one row, titled "Ver perfil de A Ver perfil de B".
+    static func participantNames(fromRowTitle title: String) -> [String] {
+        guard let prefix = profilePrefixes.first(where: title.hasPrefix) else { return [] }
+        return title.components(separatedBy: prefix)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
     }
 
     /// The tile button: "vídeo está desativado, áudio está ativado". `nil` when the label
@@ -64,16 +64,22 @@ enum SlackHuddleReader {
         var tiles: [(name: String, micOn: Bool?)] = []
         AccessibilityTree.walk(window, maxElements: 3_000) { element, _ in
             guard AccessibilityTree.role(of: element) == kAXRowRole,
-                  let title = AccessibilityTree.label(of: element),
-                  let name = SlackHuddleLabels.participantName(fromRowTitle: title),
-                  !tiles.contains(where: { $0.name == name })
+                  let title = AccessibilityTree.label(of: element)
             else { return true }
-            let micButton = AccessibilityTree.first(in: element) { child in
-                AccessibilityTree.role(of: child) == kAXButtonRole
-                    && AccessibilityTree.label(of: child).flatMap(SlackHuddleLabels.isMicOn(fromTileLabel:)) != nil
+            let names = SlackHuddleLabels.participantNames(fromRowTitle: title)
+            guard !names.isEmpty else { return true }
+            // Media-state buttons, in tile order, so a shared row matches each name to its own.
+            var micStates: [Bool] = []
+            AccessibilityTree.walk(element, maxElements: 500) { child, _ in
+                if AccessibilityTree.role(of: child) == kAXButtonRole,
+                   let state = AccessibilityTree.label(of: child).flatMap(SlackHuddleLabels.isMicOn(fromTileLabel:)) {
+                    micStates.append(state)
+                }
+                return true
             }
-            if let micButton {
-                tiles.append((name, AccessibilityTree.label(of: micButton).flatMap(SlackHuddleLabels.isMicOn(fromTileLabel:))))
+            guard !micStates.isEmpty else { return false }
+            for (index, name) in names.enumerated() where !tiles.contains(where: { $0.name == name }) {
+                tiles.append((name, micStates.count == names.count ? micStates[index] : nil))
             }
             return false
         }

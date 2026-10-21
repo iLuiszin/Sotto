@@ -63,10 +63,14 @@ struct SlackHuddleLabelsTests {
     }
 
     @Test func readsParticipantNameFromTileRow() {
-        #expect(SlackHuddleLabels.participantName(fromRowTitle: "Ver perfil de Luís Felipe Matos Corrêa") == "Luís Felipe Matos Corrêa")
-        #expect(SlackHuddleLabels.participantName(fromRowTitle: "View profile of Daniel Botelho") == "Daniel Botelho")
-        #expect(SlackHuddleLabels.participantName(fromRowTitle: "Daniel Botelho: CMA@IBRA100.") == nil)
-        #expect(SlackHuddleLabels.participantName(fromRowTitle: "Ver perfil de ") == nil)
+        #expect(SlackHuddleLabels.participantNames(fromRowTitle: "Ver perfil de Luís Felipe Matos Corrêa") == ["Luís Felipe Matos Corrêa"])
+        #expect(SlackHuddleLabels.participantNames(fromRowTitle: "View profile of Daniel Botelho") == ["Daniel Botelho"])
+        #expect(SlackHuddleLabels.participantNames(fromRowTitle: "Daniel Botelho: CMA@IBRA100.").isEmpty)
+        #expect(SlackHuddleLabels.participantNames(fromRowTitle: "Ver perfil de ").isEmpty)
+        // A two-person huddle puts both tiles in one row.
+        #expect(SlackHuddleLabels.participantNames(
+            fromRowTitle: "Ver perfil de Luís Felipe Matos Corrêa Ver perfil de Jamilly Lima de Moraes"
+        ) == ["Luís Felipe Matos Corrêa", "Jamilly Lima de Moraes"])
     }
 
     @Test func readsMicStateFromTileLabel() {
