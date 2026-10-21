@@ -51,6 +51,31 @@ nonisolated enum EchoDetector {
         return best >= echoCorrelation
     }
 
+    /// How close in time a microphone line and a system line must start to be compared.
+    static let textWindow: TimeInterval = 20
+    /// Share of a microphone line's words that, found in nearby system lines, mark it as an echo.
+    static let textOverlap = 0.6
+
+    /// Whether a microphone line repeats what the system audio said around the same time.
+    /// The loudness check misses echoes when the speakers are loud or the room reverberates;
+    /// the words of an echo still match what the other person was transcribed saying.
+    static func repeatsSystem(_ text: String, at start: TimeInterval, system: [(start: TimeInterval, text: String)]) -> Bool {
+        let mine = words(text)
+        guard mine.count >= 3 else { return false }
+        let nearby = system.filter { abs($0.start - start) <= textWindow }.reduce(into: Set<String>()) {
+            $0.formUnion(words($1.text))
+        }
+        let shared = mine.filter(nearby.contains).count
+        return Double(shared) / Double(mine.count) >= textOverlap
+    }
+
+    /// Lowercased words without accents or punctuation, so "pro" and "pró" match.
+    static func words(_ text: String) -> [String] {
+        text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+    }
+
     /// Loudness per frame in dBFS, floored so silence does not dominate.
     static func envelope(_ samples: ArraySlice<Float>) -> [Float] {
         var levels: [Float] = []

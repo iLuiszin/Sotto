@@ -76,6 +76,22 @@ private struct LiveCallPanelView: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
     }
 
+    /// The saved summary is Markdown; shows its "### " headings in bold instead of raw.
+    private static func styledSummary(_ markdown: String) -> AttributedString {
+        var result = AttributedString()
+        for (index, line) in markdown.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
+            if index > 0 { result += AttributedString("\n") }
+            if line.hasPrefix("#") {
+                var heading = AttributedString(line.drop { $0 == "#" || $0 == " " })
+                heading.font = .callout.weight(.semibold)
+                result += heading
+            } else {
+                result += AttributedString(line)
+            }
+        }
+        return result
+    }
+
     @ViewBuilder
     private var summary: some View {
         switch viewModel.summaryState {
@@ -90,7 +106,7 @@ private struct LiveCallPanelView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Summary").font(.subheadline.weight(.semibold))
                 ScrollView {
-                    Text(text)
+                    Text(Self.styledSummary(text))
                         .font(.callout)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)

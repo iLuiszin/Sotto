@@ -116,6 +116,8 @@ final class RecorderTranscriberViewModel {
         liveTranscriber = transcriber
         liveContext = nil
         liveTranscript = ""
+        summaryState = .none
+        savedFile = nil
         liveTimer = Timer.scheduledTimer(withTimeInterval: Self.livePollInterval, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in self?.pollLiveTranscription() }
         }
@@ -268,7 +270,7 @@ final class RecorderTranscriberViewModel {
         summaryState = .working
         do {
             let summary = try await withAITimeout(seconds: Self.summaryTimeout) { [aiService] in
-                try await aiService.summarizeCall(transcript)
+                try await aiService.summarizeCall(transcript, language: Self.summaryLanguage)
             }
             let text = CallTranscriptFile.formatted(summary, labels: Self.fileLabels)
             summaryState = .done(text)
@@ -283,7 +285,11 @@ final class RecorderTranscriberViewModel {
     /// was speaking then.
     private static func transcriptText(_ transcriber: LiveCallTranscriber, context: CallContext?) -> String {
         let microphoneSpeech = transcriber.microphoneSpeech
-        let lines = transcriber.entries.map { entry -> CallTranscript.Line in
+        let system = transcriber.entries.filter { $0.source == .system }.map { (start: seconds($0.range.lowerBound), text: $0.text) }
+        let entries = transcriber.entries.filter {
+            $0.source == .system || !EchoDetector.repeatsSystem($0.text, at: seconds($0.range.lowerBound), system: system)
+        }
+        let lines = entries.map { entry -> CallTranscript.Line in
             let start = seconds(entry.range.lowerBound)
             let speaker: CallTranscript.Speaker
             switch entry.source {
@@ -306,6 +312,14 @@ final class RecorderTranscriberViewModel {
             meLabel: String(localized: "Me"),
             othersLabel: String(localized: "Others")
         )
+    }
+
+    /// The spoken language picked in Settings, else the app's, named in English for the
+    /// summary prompt: the on-device model answers in English unless told otherwise.
+    private static var summaryLanguage: String {
+        let code = UserDefaults.standard.string(forKey: UserDefaultsKeys.selectedLanguage)
+            ?? Locale.current.language.languageCode?.identifier ?? "en"
+        return Locale(identifier: "en").localizedString(forLanguageCode: code) ?? code
     }
 
     private static func seconds(_ sampleIndex: Int) -> TimeInterval {
