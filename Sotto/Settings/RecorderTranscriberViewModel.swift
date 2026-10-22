@@ -68,7 +68,7 @@ final class RecorderTranscriberViewModel {
             return
         }
         // A call is transcribed while it is recorded, so the model must be ready up front.
-        if includeSystemAudio, !(modelManager?.isModelReady ?? false) {
+        if includeSystemAudio, !(modelManager?.canTranscribeCall ?? false) {
             phase = .error(String(localized: "No model loaded. Please download and select a model in Settings."))
             return
         }
@@ -96,9 +96,10 @@ final class RecorderTranscriberViewModel {
 
     private func startLiveTranscription() {
         guard let mm = modelManager else { return }
+        mm.prepareCallModel()
         let language = UserDefaults.standard.string(forKey: UserDefaultsKeys.selectedLanguage)
         let transcriber = LiveCallTranscriber { samples, context in
-            try await mm.transcribe(samples: samples, language: language, context: context).text
+            try await mm.transcribeCall(samples: samples, language: language, context: context).text
         }
         transcriber.onChange = { [weak self] in self?.refreshLiveTranscript() }
         transcriber.systemAudio = { [weak self] since in
@@ -223,6 +224,7 @@ final class RecorderTranscriberViewModel {
         segmentProgress = (0, liveTranscriber.pendingCount)
         Task {
             await liveTranscriber.waitUntilDone()
+            modelManager?.releaseCallModel()
             segmentProgress = nil
             self.liveTranscriber = nil
 

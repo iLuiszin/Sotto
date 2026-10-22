@@ -70,6 +70,14 @@ final class ModelManager {
     private let engines: [SottoModel.Engine: any TranscriptionEngine]
     private var loadTask: Task<Void, Never>?
 
+    /// Model for recorded calls when it differs from dictation's: dictation wants speed,
+    /// a call wants accuracy. `nil` uses the dictation model.
+    private(set) var callModelId: String?
+    /// A separate engine instance, so a call model of the same engine type as the
+    /// dictation model does not unload it.
+    private var callEngine: (any TranscriptionEngine)?
+    private var callLoadTask: Task<(any TranscriptionEngine)?, Never>?
+
     static let availableModels: [SottoModel] = [
         SottoModel(id: "openai_whisper-tiny", displayName: "Whisper Tiny", size: "~39 MB", engine: .whisperKit,
                    speed: 0.95, accuracy: 0.4, languages: "99+ languages",
@@ -133,6 +141,7 @@ final class ModelManager {
 
         let savedId = UserDefaults.standard.string(forKey: UserDefaultsKeys.selectedModelId)
         self.selectedModelId = savedId
+        self.callModelId = UserDefaults.standard.string(forKey: UserDefaultsKeys.callModelId)
 
         // Only claim .loading when restoreLastModel will actually load something,
         // otherwise the row shows "Loading..." forever with nothing behind it.
@@ -289,6 +298,67 @@ final class ModelManager {
             throw TranscriptionError.engineNotConfigured
         }
         return try await engine.transcribe(samples: samples, language: language, context: context)
+    }
+
+    // MARK: - Call model
+
+    /// The downloaded call model, when one is chosen and differs from dictation's.
+    var callModel: SottoModel? {
+        guard let callModelId, callModelId != selectedModelId else { return nil }
+        return Self.availableModels.first { $0.id == callModelId && downloadedModelIds.contains($0.id) }
+    }
+
+    /// Whether a call can be transcribed: by its own model or by dictation's.
+    var canTranscribeCall: Bool { callModel != nil || isModelReady }
+
+    func setCallModel(_ id: String?) {
+        releaseCallModel()
+        callModelId = id
+        UserDefaults.standard.set(id, forKey: UserDefaultsKeys.callModelId)
+    }
+
+    /// Loads the call model for the length of a recording; it is released afterwards,
+    /// so a large model does not hold memory while only dictation is used.
+    func prepareCallModel() {
+        guard callLoadTask == nil, let model = callModel else { return }
+        let engine = Self.makeEngine(model.engine)
+        callLoadTask = Task { [weak self] in
+            do {
+                try await engine.loadModel(model) { _ in }
+                try Task.checkCancellation()
+                self?.callEngine = engine
+                logger.info("Call model \(model.displayName) loaded")
+                return engine
+            } catch {
+                engine.unloadModel()
+                logger.error("Call model failed to load, using the dictation model: \(error.localizedDescription)")
+                return nil
+            }
+        }
+    }
+
+    func releaseCallModel() {
+        callLoadTask?.cancel()
+        callLoadTask = nil
+        callEngine?.unloadModel()
+        callEngine = nil
+    }
+
+    /// Transcribes with the call model, waiting for it to finish loading; falls back to
+    /// the dictation model when there is none or it failed to load.
+    func transcribeCall(samples: [Float], language: String?, context: String?) async throws -> SottoTranscription {
+        if let engine = await callLoadTask?.value {
+            return try await engine.transcribe(samples: samples, language: language, context: context)
+        }
+        return try await transcribe(samples: samples, language: language, context: context)
+    }
+
+    private static func makeEngine(_ engine: SottoModel.Engine) -> any TranscriptionEngine {
+        switch engine {
+        case .whisperKit: WhisperKitEngine()
+        case .parakeet: ParakeetEngine()
+        case .mlx: MLXEngine()
+        }
     }
 }
 

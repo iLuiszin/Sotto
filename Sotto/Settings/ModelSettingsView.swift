@@ -9,6 +9,7 @@ struct ModelSettingsView: View {
         ScrollView {
             VStack(spacing: 20) {
                 SpokenLanguageSection()
+                CallModelSection(modelManager: mm)
 
                 ForEach(SottoModel.Engine.allCases, id: \.rawValue) { engine in
                     let models = ModelManager.availableModels.filter { $0.engine == engine }
@@ -54,6 +55,33 @@ private struct SpokenLanguageSection: View {
                 }
             }
             Text("Choose the language you speak if the model sometimes writes in the wrong one.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// Dictation wants a fast model; a recorded call is better served by an accurate one.
+private struct CallModelSection: View {
+    let modelManager: ModelManager
+
+    var body: some View {
+        let downloaded = ModelManager.availableModels.filter { modelManager.isModelDownloaded($0) }
+        let selection = Binding<String?>(
+            get: { modelManager.callModelId },
+            set: { modelManager.setCallModel($0) }
+        )
+
+        VStack(alignment: .leading, spacing: 4) {
+            Picker("Model for call recordings", selection: selection) {
+                Text("Same as dictation").tag(String?.none)
+                Divider()
+                ForEach(downloaded) { model in
+                    Text(model.displayName).tag(String?.some(model.id))
+                }
+            }
+            Text("Loaded only while a call is recorded. Only downloaded models are listed.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

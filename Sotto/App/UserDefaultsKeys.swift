@@ -2,6 +2,8 @@ import Foundation
 
 enum UserDefaultsKeys {
     static let selectedModelId = "selectedModelId"
+    /// Model for recorded calls; absent means the dictation model.
+    static let callModelId = "callModelId"
     static let soundFeedbackEnabled = "soundFeedbackEnabled"
     static let selectedLanguage = "selectedLanguage"
     static let waveformColorPreset = "waveformColorPreset"
